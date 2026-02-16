@@ -49,7 +49,7 @@ func run(ctx context.Context) {
 
 	fmt.Println("Generate image example.")
 	response1, err := client.Models.GenerateImages(
-		ctx, "imagen-3.0-generate-002",
+		ctx, "imagen-4.0-generate-001",
 		/*prompt=*/ "An umbrella in the foreground, and a rainy night sky in the background",
 		&genai.GenerateImagesConfig{
 			IncludeRAIReason:        true,
