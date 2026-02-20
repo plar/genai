@@ -1898,6 +1898,77 @@ type GoogleSearchRetrieval struct {
 type URLContext struct {
 }
 
+// A transport that can stream HTTP requests and responses. Next ID: 6. This data type
+// is not supported in Vertex AI.
+type StreamableHTTPTransport struct {
+	// Optional. Optional: Fields for authentication headers, timeouts, etc., if needed.
+	Headers map[string]string `json:"headers,omitempty"`
+	// Timeout for SSE read operations.
+	SseReadTimeout time.Duration `json:"sseReadTimeout,omitempty"`
+	// Whether to close the client session when the transport closes.
+	TerminateOnClose *bool `json:"terminateOnClose,omitempty"`
+	// HTTP timeout for regular operations.
+	Timeout time.Duration `json:"timeout,omitempty"`
+	// The full URL for the MCPServer endpoint. Example: "https://api.example.com/mcp".
+	URL string `json:"url,omitempty"`
+}
+
+func (s *StreamableHTTPTransport) UnmarshalJSON(data []byte) error {
+	type Alias StreamableHTTPTransport
+	aux := &struct {
+		SseReadTimeout *durationJSON `json:"sseReadTimeout,omitempty"`
+		Timeout        *durationJSON `json:"timeout,omitempty"`
+		*Alias
+	}{
+		Alias: (*Alias)(s),
+	}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	if !reflect.ValueOf(aux.SseReadTimeout).IsZero() {
+		s.SseReadTimeout = time.Duration(*aux.SseReadTimeout)
+	}
+
+	if !reflect.ValueOf(aux.Timeout).IsZero() {
+		s.Timeout = time.Duration(*aux.Timeout)
+	}
+
+	return nil
+}
+
+func (s *StreamableHTTPTransport) MarshalJSON() ([]byte, error) {
+	type Alias StreamableHTTPTransport
+	aux := &struct {
+		SseReadTimeout *durationJSON `json:"sseReadTimeout,omitempty"`
+		Timeout        *durationJSON `json:"timeout,omitempty"`
+		*Alias
+	}{
+		Alias: (*Alias)(s),
+	}
+
+	if !reflect.ValueOf(s.SseReadTimeout).IsZero() {
+		aux.SseReadTimeout = (*durationJSON)(&s.SseReadTimeout)
+	}
+
+	if !reflect.ValueOf(s.Timeout).IsZero() {
+		aux.Timeout = (*durationJSON)(&s.Timeout)
+	}
+
+	return json.Marshal(aux)
+}
+
+// A MCPServer is a server that can be called by the model to perform actions. It is
+// a server that implements the MCP protocol. Next ID: 5. This data type is not supported
+// in Vertex AI.
+type MCPServer struct {
+	// The name of the MCPServer.
+	Name string `json:"name,omitempty"`
+	// A transport that can stream HTTP requests and responses.
+	StreamableHTTPTransport *StreamableHTTPTransport `json:"streamableHttpTransport,omitempty"`
+}
+
 // Tool details of a tool that the model may use to generate a response.
 type Tool struct {
 	// Optional. Retrieval tool type. System will always execute the provided retrieval
@@ -1931,6 +2002,8 @@ type Tool struct {
 	GoogleSearchRetrieval *GoogleSearchRetrieval `json:"googleSearchRetrieval,omitempty"`
 	// Optional. Tool to support URL context retrieval.
 	URLContext *URLContext `json:"urlContext,omitempty"`
+	// Optional. MCP Servers to connect to. This field is not supported in Vertex AI.
+	MCPServers []*MCPServer `json:"mcpServers,omitempty"`
 }
 
 // An object that represents a latitude/longitude pair.

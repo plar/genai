@@ -3679,6 +3679,11 @@ func toolToMldev(fromObject map[string]any, parentObject map[string]any, rootObj
 		setValueByPath(toObject, []string{"urlContext"}, fromUrlContext)
 	}
 
+	fromMcpServers := getValueByPath(fromObject, []string{"mcpServers"})
+	if fromMcpServers != nil {
+		setValueByPath(toObject, []string{"mcpServers"}, fromMcpServers)
+	}
+
 	return toObject, nil
 }
 
@@ -3737,6 +3742,10 @@ func toolToVertex(fromObject map[string]any, parentObject map[string]any, rootOb
 	fromUrlContext := getValueByPath(fromObject, []string{"urlContext"})
 	if fromUrlContext != nil {
 		setValueByPath(toObject, []string{"urlContext"}, fromUrlContext)
+	}
+
+	if getValueByPath(fromObject, []string{"mcpServers"}) != nil {
+		return nil, fmt.Errorf("mcpServers parameter is not supported in Vertex AI")
 	}
 
 	return toObject, nil
