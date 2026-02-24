@@ -295,10 +295,8 @@ func TestTable(t *testing.T) {
 							}
 
 							if !strings.Contains(testTableFile.TestMethod, ".") {
-								if *mode == apiMode {
-									t.Skipf("Custom test method %s not supported in Go yet", testTableFile.TestMethod)
-								} else { // replay mode
-									t.Skipf("Custom test method %s not supported in replay mode in Go", testTableFile.TestMethod)
+								if *mode != apiMode { // replay mode
+									t.Skipf("Custom test method %s only supported in API mode in Go", testTableFile.TestMethod)
 								}
 								return
 							}
@@ -320,16 +318,29 @@ func TestTable(t *testing.T) {
 							if err != nil {
 								t.Fatalf("Error creating client: %v", err)
 							}
-							method := extractMethod(t, &testTableFile, client)
-							args := extractArgs(ctx, t, method, &testTableFile, testTableItem)
 
-							// Inject unknown fields to the replay file to simulate the case where the SDK adds
-							// unknown fields to the response.
-							// For forward compatibility tests.
-							if testName == "TestTable/vertex/models/generate_content" {
-								injectUnknownFields(t, replayClient)
+							var response []reflect.Value
+							if !strings.Contains(testTableFile.TestMethod, ".") {
+								customMethodKey := testName
+								if customMethod, ok := customTestMethods[customMethodKey]; ok {
+									response = customMethod(ctx, client, testTableItem)
+								} else {
+									t.Skipf("Custom test method %s (%s) not supported in Go yet", testTableFile.TestMethod, customMethodKey)
+									return
+								}
+							} else {
+								method := extractMethod(t, &testTableFile, client)
+								args := extractArgs(ctx, t, method, &testTableFile, testTableItem)
+
+								// Inject unknown fields to the replay file to simulate the case where the SDK adds
+								// unknown fields to the response.
+								// For forward compatibility tests.
+								if testName == "TestTable/vertex/models/generate_content" {
+									injectUnknownFields(t, replayClient)
+								}
+								response = method.Call(args)
 							}
-							response := method.Call(args)
+
 							if *mode == apiMode {
 								return
 							}
