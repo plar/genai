@@ -90,6 +90,27 @@ const (
 	TypeNULL Type = "NULL"
 )
 
+// Sites with confidence level chosen & above this value will be blocked from the search
+// results. This enum is not supported in Gemini API.
+type PhishBlockThreshold string
+
+const (
+	// Defaults to unspecified.
+	PhishBlockThresholdUnspecified PhishBlockThreshold = "PHISH_BLOCK_THRESHOLD_UNSPECIFIED"
+	// Blocks Low and above confidence URL that is risky.
+	PhishBlockThresholdBlockLowAndAbove PhishBlockThreshold = "BLOCK_LOW_AND_ABOVE"
+	// Blocks Medium and above confidence URL that is risky.
+	PhishBlockThresholdBlockMediumAndAbove PhishBlockThreshold = "BLOCK_MEDIUM_AND_ABOVE"
+	// Blocks High and above confidence URL that is risky.
+	PhishBlockThresholdBlockHighAndAbove PhishBlockThreshold = "BLOCK_HIGH_AND_ABOVE"
+	// Blocks Higher and above confidence URL that is risky.
+	PhishBlockThresholdBlockHigherAndAbove PhishBlockThreshold = "BLOCK_HIGHER_AND_ABOVE"
+	// Blocks Very high and above confidence URL that is risky.
+	PhishBlockThresholdBlockVeryHighAndAbove PhishBlockThreshold = "BLOCK_VERY_HIGH_AND_ABOVE"
+	// Blocks Extremely high confidence URL that is risky.
+	PhishBlockThresholdBlockOnlyExtremelyHigh PhishBlockThreshold = "BLOCK_ONLY_EXTREMELY_HIGH"
+)
+
 // The API spec that the external API implements. This enum is not supported in Gemini
 // API.
 type APISpec string
@@ -137,27 +158,6 @@ const (
 	HTTPElementLocationHTTPInBody HTTPElementLocation = "HTTP_IN_BODY"
 	// Element is in the HTTP request cookie.
 	HTTPElementLocationHTTPInCookie HTTPElementLocation = "HTTP_IN_COOKIE"
-)
-
-// Sites with confidence level chosen & above this value will be blocked from the search
-// results. This enum is not supported in Gemini API.
-type PhishBlockThreshold string
-
-const (
-	// Defaults to unspecified.
-	PhishBlockThresholdUnspecified PhishBlockThreshold = "PHISH_BLOCK_THRESHOLD_UNSPECIFIED"
-	// Blocks Low and above confidence URL that is risky.
-	PhishBlockThresholdBlockLowAndAbove PhishBlockThreshold = "BLOCK_LOW_AND_ABOVE"
-	// Blocks Medium and above confidence URL that is risky.
-	PhishBlockThresholdBlockMediumAndAbove PhishBlockThreshold = "BLOCK_MEDIUM_AND_ABOVE"
-	// Blocks High and above confidence URL that is risky.
-	PhishBlockThresholdBlockHighAndAbove PhishBlockThreshold = "BLOCK_HIGH_AND_ABOVE"
-	// Blocks Higher and above confidence URL that is risky.
-	PhishBlockThresholdBlockHigherAndAbove PhishBlockThreshold = "BLOCK_HIGHER_AND_ABOVE"
-	// Blocks Very high and above confidence URL that is risky.
-	PhishBlockThresholdBlockVeryHighAndAbove PhishBlockThreshold = "BLOCK_VERY_HIGH_AND_ABOVE"
-	// Blocks Extremely high confidence URL that is risky.
-	PhishBlockThresholdBlockOnlyExtremelyHigh PhishBlockThreshold = "BLOCK_ONLY_EXTREMELY_HIGH"
 )
 
 // Specifies the function Behavior. Currently only supported by the BidiGenerateContent
@@ -559,6 +559,19 @@ const (
 	EnvironmentUnspecified Environment = "ENVIRONMENT_UNSPECIFIED"
 	// Operates in a web browser.
 	EnvironmentBrowser Environment = "ENVIRONMENT_BROWSER"
+)
+
+// Enum for controlling whether the model can generate images of prominent people (celebrities).
+type ProminentPeople string
+
+const (
+	// Unspecified value. The model will proceed with the default behavior, which is to
+	// allow generation of prominent people.
+	ProminentPeopleUnspecified ProminentPeople = "PROMINENT_PEOPLE_UNSPECIFIED"
+	// Allows the model to generate images of prominent people.
+	ProminentPeopleAllowProminentPeople ProminentPeople = "ALLOW_PROMINENT_PEOPLE"
+	// Prevents the model from generating images of prominent people.
+	ProminentPeopleBlockProminentPeople ProminentPeople = "BLOCK_PROMINENT_PEOPLE"
 )
 
 // Enum representing the Vertex embedding API to use.
@@ -1476,6 +1489,100 @@ type FileSearch struct {
 	MetadataFilter string `json:"metadataFilter,omitempty"`
 }
 
+// Standard web search for grounding and related configurations.
+// Only text results are returned.
+type WebSearch struct {
+}
+
+// Image search for grounding and related configurations.
+type ImageSearch struct {
+}
+
+// Tool to support computer use.
+type SearchTypes struct {
+	// Optional. Setting this field enables web search. Only text results are
+	// returned.
+	WebSearch *WebSearch `json:"webSearch,omitempty"`
+	// Optional. Setting this field enables image search. Image bytes are returned.
+	ImageSearch *ImageSearch `json:"imageSearch,omitempty"`
+}
+
+// Represents a time interval, encoded as a Timestamp start (inclusive) and a Timestamp
+// end (exclusive). The start must be less than or equal to the end. When the start
+// equals the end, the interval is empty (matches no time). When both start and end
+// are unspecified, the interval matches any time.
+type Interval struct {
+	// Optional. Exclusive end of the interval. If specified, a Timestamp matching this
+	// interval will have to be before the end.
+	EndTime time.Time `json:"endTime,omitempty"`
+	// Optional. Inclusive start of the interval. If specified, a Timestamp matching this
+	// interval will have to be the same or after the start.
+	StartTime time.Time `json:"startTime,omitempty"`
+}
+
+func (i *Interval) UnmarshalJSON(data []byte) error {
+	type Alias Interval
+	aux := &struct {
+		EndTime   *time.Time `json:"endTime,omitempty"`
+		StartTime *time.Time `json:"startTime,omitempty"`
+		*Alias
+	}{
+		Alias: (*Alias)(i),
+	}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	if !reflect.ValueOf(aux.EndTime).IsZero() {
+		i.EndTime = time.Time(*aux.EndTime)
+	}
+
+	if !reflect.ValueOf(aux.StartTime).IsZero() {
+		i.StartTime = time.Time(*aux.StartTime)
+	}
+
+	return nil
+}
+
+func (i *Interval) MarshalJSON() ([]byte, error) {
+	type Alias Interval
+	aux := &struct {
+		EndTime   *time.Time `json:"endTime,omitempty"`
+		StartTime *time.Time `json:"startTime,omitempty"`
+		*Alias
+	}{
+		Alias: (*Alias)(i),
+	}
+
+	if !reflect.ValueOf(i.EndTime).IsZero() {
+		aux.EndTime = (*time.Time)(&i.EndTime)
+	}
+
+	if !reflect.ValueOf(i.StartTime).IsZero() {
+		aux.StartTime = (*time.Time)(&i.StartTime)
+	}
+
+	return json.Marshal(aux)
+}
+
+// Tool to support web search.
+type GoogleSearch struct {
+	// Optional. Different types of search that can be enabled on the GoogleSearch tool.
+	SearchTypes *SearchTypes `json:"searchTypes,omitempty"`
+	// Optional. List of domains to be excluded from the search results. The default limit
+	// is 2000 domains. Example: ["amazon.com", "facebook.com"]. This field is not supported
+	// in Gemini API.
+	ExcludeDomains []string `json:"excludeDomains,omitempty"`
+	// Optional. Sites with confidence level chosen & above this value will be blocked from
+	// the search results. This field is not supported in Gemini API.
+	BlockingConfidence PhishBlockThreshold `json:"blockingConfidence,omitempty"`
+	// Optional. Filter search results to a specific time range. If customers set a start
+	// time, they must set an end time (and vice versa). This field is not supported in
+	// Vertex AI.
+	TimeRangeFilter *Interval `json:"timeRangeFilter,omitempty"`
+}
+
 // The API secret. This data type is not supported in Gemini API.
 type APIAuthAPIKeyConfig struct {
 	// Required. The SecretManager secret version resource name storing API key. e.g. projects/{project}/secrets/{secret}/versions/{version}
@@ -1805,80 +1912,6 @@ type GoogleMaps struct {
 	EnableWidget *bool `json:"enableWidget,omitempty"`
 }
 
-// Represents a time interval, encoded as a Timestamp start (inclusive) and a Timestamp
-// end (exclusive). The start must be less than or equal to the end. When the start
-// equals the end, the interval is empty (matches no time). When both start and end
-// are unspecified, the interval matches any time.
-type Interval struct {
-	// Optional. Exclusive end of the interval. If specified, a Timestamp matching this
-	// interval will have to be before the end.
-	EndTime time.Time `json:"endTime,omitempty"`
-	// Optional. Inclusive start of the interval. If specified, a Timestamp matching this
-	// interval will have to be the same or after the start.
-	StartTime time.Time `json:"startTime,omitempty"`
-}
-
-func (i *Interval) UnmarshalJSON(data []byte) error {
-	type Alias Interval
-	aux := &struct {
-		EndTime   *time.Time `json:"endTime,omitempty"`
-		StartTime *time.Time `json:"startTime,omitempty"`
-		*Alias
-	}{
-		Alias: (*Alias)(i),
-	}
-
-	if err := json.Unmarshal(data, &aux); err != nil {
-		return err
-	}
-
-	if !reflect.ValueOf(aux.EndTime).IsZero() {
-		i.EndTime = time.Time(*aux.EndTime)
-	}
-
-	if !reflect.ValueOf(aux.StartTime).IsZero() {
-		i.StartTime = time.Time(*aux.StartTime)
-	}
-
-	return nil
-}
-
-func (i *Interval) MarshalJSON() ([]byte, error) {
-	type Alias Interval
-	aux := &struct {
-		EndTime   *time.Time `json:"endTime,omitempty"`
-		StartTime *time.Time `json:"startTime,omitempty"`
-		*Alias
-	}{
-		Alias: (*Alias)(i),
-	}
-
-	if !reflect.ValueOf(i.EndTime).IsZero() {
-		aux.EndTime = (*time.Time)(&i.EndTime)
-	}
-
-	if !reflect.ValueOf(i.StartTime).IsZero() {
-		aux.StartTime = (*time.Time)(&i.StartTime)
-	}
-
-	return json.Marshal(aux)
-}
-
-// GoogleSearch tool type. Tool to support Google Search in Model. Powered by Google.
-type GoogleSearch struct {
-	// Optional. List of domains to be excluded from the search results. The default limit
-	// is 2000 domains. Example: ["amazon.com", "facebook.com"]. This field is not supported
-	// in Gemini API.
-	ExcludeDomains []string `json:"excludeDomains,omitempty"`
-	// Optional. Sites with confidence level chosen & above this value will be blocked from
-	// the search results. This field is not supported in Gemini API.
-	BlockingConfidence PhishBlockThreshold `json:"blockingConfidence,omitempty"`
-	// Optional. Filter search results to a specific time range. If customers set a start
-	// time, they must set an end time (and vice versa). This field is not supported in
-	// Vertex AI.
-	TimeRangeFilter *Interval `json:"timeRangeFilter,omitempty"`
-}
-
 // Describes the options to customize dynamic retrieval.
 type DynamicRetrievalConfig struct {
 	// Optional. The threshold to be used in dynamic retrieval. If empty, a system default
@@ -1981,6 +2014,8 @@ type Tool struct {
 	ComputerUse *ComputerUse `json:"computerUse,omitempty"`
 	// Optional. Tool to retrieve knowledge from the File Search Stores.
 	FileSearch *FileSearch `json:"fileSearch,omitempty"`
+	// Optional. Enables the model to execute Google Search as part of generation.
+	GoogleSearch *GoogleSearch `json:"googleSearch,omitempty"`
 	// Optional. CodeExecution tool type. Enables the model to execute code as part of generation.
 	CodeExecution *ToolCodeExecution `json:"codeExecution,omitempty"`
 	// Optional. Tool to support searching public web data, powered by Vertex AI Search
@@ -1995,9 +2030,6 @@ type Tool struct {
 	FunctionDeclarations []*FunctionDeclaration `json:"functionDeclarations,omitempty"`
 	// Optional. GoogleMaps tool type. Tool to support Google Maps in Model.
 	GoogleMaps *GoogleMaps `json:"googleMaps,omitempty"`
-	// Optional. GoogleSearch tool type. Tool to support Google Search in Model. Powered
-	// by Google.
-	GoogleSearch *GoogleSearch `json:"googleSearch,omitempty"`
 	// Optional. Specialized retrieval tool that is powered by Google Search.
 	GoogleSearchRetrieval *GoogleSearchRetrieval `json:"googleSearchRetrieval,omitempty"`
 	// Optional. Tool to support URL context retrieval.
@@ -2119,6 +2151,12 @@ type ImageConfig struct {
 	// Optional. Controls the generation of people. Supported values are:
 	// ALLOW_ALL, ALLOW_ADULT, ALLOW_NONE.
 	PersonGeneration string `json:"personGeneration,omitempty"`
+	// Optional. Controls whether prominent people (celebrities)
+	// generation is allowed. If used with personGeneration, personGeneration
+	// enum would take precedence. For instance, if ALLOW_NONE is set, all person
+	// generation would be blocked. If this field is unspecified, the default
+	// behavior is to allow prominent people.
+	ProminentPeople ProminentPeople `json:"prominentPeople,omitempty"`
 	// Optional. MIME type of the generated image. This field is not
 	// supported in Gemini API.
 	OutputMIMEType string `json:"outputMimeType,omitempty"`
@@ -2405,6 +2443,21 @@ type CitationMetadata struct {
 	Citations []*Citation `json:"citations,omitempty"`
 }
 
+// A piece of evidence that comes from an image search result.
+// It contains the URI of the image search result and the URI of the image.
+// This is used to provide the user with a link to the source of the
+// information.
+type GroundingChunkImage struct {
+	// Optional. The URI of the image search result page.
+	SourceURI string `json:"sourceUri,omitempty"`
+	// Optional. The URI of the image.
+	ImageURI string `json:"imageUri,omitempty"`
+	// Optional. The title of the image search result page.
+	Title string `json:"title,omitempty"`
+	// Optional. The domain of the image search result page.
+	Domain string `json:"domain,omitempty"`
+}
+
 // Author attribution for a photo or review. This data type is not supported in Gemini
 // API.
 type GroundingChunkMapsPlaceAnswerSourcesAuthorAttribution struct {
@@ -2505,8 +2558,14 @@ type GroundingChunkWeb struct {
 	URI string `json:"uri,omitempty"`
 }
 
-// Grounding chunk.
+// A piece of evidence that supports a claim made by the model.
+// This is used to show a citation for a claim made by the model. When grounding
+// is enabled, the model returns a `GroundingChunk` that contains a reference to
+// the source of the information.
 type GroundingChunk struct {
+	// Optional. A grounding chunk from an image search result. See the `Image`
+	// message for details.
+	Image *GroundingChunkImage `json:"image,omitempty"`
 	// Grounding chunk from Google Maps. This field is not supported in Gemini API.
 	Maps *GroundingChunkMaps `json:"maps,omitempty"`
 	// Grounding chunk from context retrieved by the retrieval tools. This field is not
@@ -2571,14 +2630,19 @@ type GroundingMetadataSourceFlaggingURI struct {
 	SourceID string `json:"sourceId,omitempty"`
 }
 
-// Metadata returned to client when grounding is enabled.
 type GroundingMetadata struct {
+	// Optional. The image search queries that were used to generate the
+	// content. This field is populated only when the grounding source is Google
+	// Search with the Image Search search_type enabled.
+	ImageSearchQueries []string `json:"imageSearchQueries,omitempty"`
+	// Optional. A list of supporting references retrieved from the grounding
+	// source. This field is populated when the grounding source is Google
+	// Search, Vertex AI Search, or Google Maps.
+	GroundingChunks []*GroundingChunk `json:"groundingChunks,omitempty"`
 	// Optional. Output only. Resource name of the Google Maps widget context token to be
 	// used with the PlacesContextElement widget to render contextual data. This is populated
 	// only for Google Maps grounding. This field is not supported in Gemini API.
 	GoogleMapsWidgetContextToken string `json:"googleMapsWidgetContextToken,omitempty"`
-	// List of supporting references retrieved from specified grounding source.
-	GroundingChunks []*GroundingChunk `json:"groundingChunks,omitempty"`
 	// Optional. List of grounding support.
 	GroundingSupports []*GroundingSupport `json:"groundingSupports,omitempty"`
 	// Optional. Output only. Retrieval metadata.
@@ -2670,10 +2734,11 @@ type Candidate struct {
 	// Optional. The reason why the model stopped generating tokens.
 	// If empty, the model has not stopped generating the tokens.
 	FinishReason FinishReason `json:"finishReason,omitempty"`
+	// Optional. Output only. Metadata returned when grounding is enabled. It
+	// contains the sources used to ground the generated content.
+	GroundingMetadata *GroundingMetadata `json:"groundingMetadata,omitempty"`
 	// Output only. Average log probability score of the candidate.
 	AvgLogprobs float64 `json:"avgLogprobs,omitempty"`
-	// Output only. Metadata specifies sources used to ground generated content.
-	GroundingMetadata *GroundingMetadata `json:"groundingMetadata,omitempty"`
 	// Output only. Index of the candidate.
 	Index int32 `json:"index,omitempty"`
 	// Output only. Log-likelihood scores for the response tokens and top tokens
