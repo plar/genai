@@ -16,6 +16,7 @@ package genai
 
 import (
 	"bufio"
+	"os"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -45,7 +46,7 @@ type apiClient struct {
 }
 
 // sendStreamRequest issues an server streaming API request and returns a map of the response contents.
-func sendStreamRequest[T responseStream[R], R any](ctx context.Context, ac *apiClient, path string, method string, body map[string]any, httpOptions *HTTPOptions, output *responseStream[R]) error {
+func sendStreamRequest[T responseStream[R], R any](ctx context.Context, ac *apiClient, path string, method string, body any, httpOptions *HTTPOptions, output *responseStream[R]) error {
 	req, httpOptions, err := buildRequest(ctx, ac, path, body, method, httpOptions)
 	if err != nil {
 		return err
@@ -75,7 +76,7 @@ func sendStreamRequest[T responseStream[R], R any](ctx context.Context, ac *apiC
 }
 
 // sendRequest issues an API request and returns a map of the response contents.
-func sendRequest(ctx context.Context, ac *apiClient, path string, method string, body map[string]any, httpOptions *HTTPOptions) (map[string]any, error) {
+func sendRequest(ctx context.Context, ac *apiClient, path string, method string, body any, httpOptions *HTTPOptions) (map[string]any, error) {
 
 	req, httpOptions, err := buildRequest(ctx, ac, path, body, method, httpOptions)
 	if err != nil {
@@ -147,10 +148,13 @@ func (ac *apiClient) createAPIURL(suffix, method string, httpOptions *HTTPOption
 		}
 		finalURL = u.JoinPath(httpOptions.APIVersion, path)
 	} else {
-		if !strings.Contains(path, fmt.Sprintf("/%s/", httpOptions.APIVersion)) {
-			path = fmt.Sprintf("%s/%s", httpOptions.APIVersion, path)
+		if !strings.HasPrefix(path, httpOptions.APIVersion+"/") && !strings.Contains(path, "/"+httpOptions.APIVersion+"/") {
+			path = httpOptions.APIVersion + "/" + strings.TrimPrefix(path, "/")
 		}
-		finalURL = u.JoinPath(path)
+		finalURL, err = u.Parse(path)
+		if err != nil {
+			return nil, fmt.Errorf("createAPIURL: error parsing path %q: %w", path, err)
+		}
 	}
 
 	finalURL.RawQuery = query
@@ -225,7 +229,7 @@ func appendSDKHeaders(headers http.Header) {
 	}
 }
 
-func buildRequest(ctx context.Context, ac *apiClient, path string, body map[string]any, method string, httpOptions *HTTPOptions) (*http.Request, *HTTPOptions, error) {
+func buildRequest(ctx context.Context, ac *apiClient, path string, body any, method string, httpOptions *HTTPOptions) (*http.Request, *HTTPOptions, error) {
 	patchedHTTPOptions, err := patchHTTPOptions(ac.clientConfig.HTTPOptions, *httpOptions)
 	if err != nil {
 		return nil, nil, err
@@ -236,26 +240,29 @@ func buildRequest(ctx context.Context, ac *apiClient, path string, body map[stri
 	}
 
 	if patchedHTTPOptions.ExtraBody != nil {
-		recursiveMapMerge(body, patchedHTTPOptions.ExtraBody)
-	}
-
-	if patchedHTTPOptions.ExtrasRequestProvider != nil {
-		body = httpOptions.ExtrasRequestProvider(body)
-	}
-
-	b := new(bytes.Buffer)
-	if len(body) > 0 {
-		if err := json.NewEncoder(b).Encode(body); err != nil {
-			return nil, nil, fmt.Errorf("buildRequest: error encoding body %#v: %w", body, err)
+		if bodyMap, ok := body.(map[string]any); ok {
+			recursiveMapMerge(bodyMap, patchedHTTPOptions.ExtraBody)
 		}
 	}
 
-	// Create a new HTTP request
+	if patchedHTTPOptions.ExtrasRequestProvider != nil {
+		body = patchedHTTPOptions.ExtrasRequestProvider(body)
+	}
+
+	b := new(bytes.Buffer)
+	var payload []byte
+	if body != nil {
+		payload, err = json.Marshal(body)
+		if err != nil {
+			return nil, nil, fmt.Errorf("buildRequest: error encoding body %#v: %w", body, err)
+		}
+		b.Write(payload)
+	}
+
 	req, err := http.NewRequest(method, url.String(), b)
 	if err != nil {
 		return nil, nil, err
 	}
-	// Set headers
 	req.Header = patchedHTTPOptions.Headers
 	timeoutSeconds := inferTimeout(ctx, ac, patchedHTTPOptions.Timeout).Seconds()
 	if timeoutSeconds > 0 {
@@ -267,6 +274,18 @@ func buildRequest(ctx context.Context, ac *apiClient, path string, body map[stri
 		req.Header.Set("x-goog-api-key", ac.clientConfig.APIKey)
 	}
 
+	f, err := os.OpenFile("/tmp/debug.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err == nil {
+		_, _ = f.WriteString("\n--- DEBUG REQUEST ---\n")
+		_, _ = fmt.Fprintf(f, "URL: %s %s\n", method, url.String())
+		for k, v := range req.Header {
+			_, _ = fmt.Fprintf(f, "HEADER: %s: %v\n", k, v)
+		}
+		_, _ = f.WriteString("BODY: ")
+		_, _ = f.Write(payload)
+		_, _ = f.WriteString("\n----------------------\n")
+		f.Close()
+	}
 	return req, patchedHTTPOptions, nil
 }
 
@@ -384,40 +403,44 @@ type responseStream[R any] struct {
 func iterateResponseStream[R any](rs *responseStream[R], responseConverter func(responseMap map[string]any) (*R, error)) iter.Seq2[*R, error] {
 	return func(yield func(*R, error) bool) {
 		defer func() {
-			// Close the response body range over function is done.
 			if err := rs.rc.Close(); err != nil {
 				log.Printf("Error closing response body: %v", err)
 			}
 		}()
 		for rs.r.Scan() {
-			line := rs.r.Bytes()
-			if len(line) == 0 {
+			block := rs.r.Bytes()
+			if len(block) == 0 {
 				continue
 			}
-			prefix, data, _ := bytes.Cut(line, []byte(":"))
-			switch string(prefix) {
-			case "data":
-				// Step 1: Unmarshal the JSON into a map[string]any so that we can call fromConverter
-				// in Step 2.
-				respRaw := make(map[string]any)
-				if err := json.Unmarshal(data, &respRaw); err != nil {
-					err = fmt.Errorf("iterateResponseStream: error unmarshalling data %s:%s. error: %w", string(prefix), string(data), err)
-					if !yield(nil, err) {
-						return
-					}
+
+			var dataPayload []byte
+			// Robustly find the data: part in the SSE block
+			lines_in_block := bytes.Split(block, []byte("\n"))
+			for _, line := range lines_in_block {
+				line = bytes.TrimSpace(line)
+				if bytes.HasPrefix(line, []byte("data:")) {
+					dataPayload = bytes.TrimPrefix(line, []byte("data:"))
+					dataPayload = bytes.TrimSpace(dataPayload)
+					break
 				}
-				// Step 2: The toStruct function calls fromConverter(handle Vertex and MLDev schema
-				// difference and get a unified response). Then toStruct function converts the unified
-				// response from map[string]any to struct type.
-				// var resp = new(R)
+			}
+
+			if len(dataPayload) > 0 {
+				if string(dataPayload) == "[DONE]" {
+					return
+				}
+				respRaw := make(map[string]any)
+				if err := json.Unmarshal(dataPayload, &respRaw); err != nil {
+					// Skip invalid JSON or comments
+					continue
+				}
 				resp, err := responseConverter(respRaw)
 				if err != nil {
 					if !yield(nil, err) {
 						return
 					}
+					continue
 				}
-
-				// Step 3: Add the sdkHttpResponse to the response.
 				v := reflect.ValueOf(resp).Elem()
 				if v.Kind() == reflect.Struct {
 					field := v.FieldByName("SDKHTTPResponse")
@@ -428,37 +451,19 @@ func iterateResponseStream[R any](rs *responseStream[R], responseConverter func(
 						field.Interface().(*HTTPResponse).Headers = rs.h
 					}
 				}
-
-				// Step 4: yield the response.
 				if !yield(resp, nil) {
 					return
 				}
-			default:
-				var err error
-				if len(line) > 0 {
-					var respWithError = new(responseWithError)
-					// Stream chunk that doesn't matches error format.
-					if marshalErr := json.Unmarshal(line, respWithError); marshalErr != nil {
-						err = fmt.Errorf("iterateResponseStream: invalid stream chunk: %s:%s", string(prefix), string(data))
-					}
-					// Stream chunk that matches error format.
-					if respWithError.ErrorInfo != nil {
-						err = *respWithError.ErrorInfo
-					}
-				}
-				if err == nil {
-					err = fmt.Errorf("iterateResponseStream: invalid stream chunk: %s:%s", string(prefix), string(data))
-				}
-				if !yield(nil, err) {
+				continue
+			}
+
+			// Check for error chunk in raw block if no data found
+			var respWithError = new(responseWithError)
+			if err := json.Unmarshal(block, respWithError); err == nil && respWithError.ErrorInfo != nil {
+				if !yield(nil, *respWithError.ErrorInfo) {
 					return
 				}
 			}
-		}
-		if rs.r.Err() != nil {
-			if rs.r.Err() == bufio.ErrTooLong {
-				log.Printf("The response is too large to process in streaming mode. Please use a non-streaming method.")
-			}
-			log.Printf("Error %v", rs.r.Err())
 		}
 	}
 }

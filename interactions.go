@@ -46,7 +46,16 @@ type Interaction struct {
 	Input                 any                          `json:"input,omitempty"` // Can be string, []*InteractionContent, []*InteractionTurn, or *InteractionContent
 	GenerationConfig      *InteractionGenerationConfig `json:"generationConfig,omitempty"`
 	AgentConfig           any                          `json:"agentConfig,omitempty"`
+	Stream                bool                         `json:"stream,omitempty"`
 	SDKHTTPResponse       *HTTPResponse                `json:"sdkHttpResponse,omitempty"`
+}
+
+// InteractionEvent represents an event in a streaming interaction.
+type InteractionEvent struct {
+	EventType   string              `json:"event_type"`
+	Interaction *Interaction        `json:"interaction,omitempty"`
+	Delta       *InteractionContent `json:"delta,omitempty"`
+	Index       int                 `json:"index,omitempty"`
 }
 
 // ResponseModality represents the requested modality of the response.
@@ -114,7 +123,7 @@ type InteractionAllowedTools struct {
 	Tools []string `json:"tools,omitempty"`
 }
 
-// InteractionUsage statistics on the interaction request's token usage.
+// InteractionUsage statistics on the interaction request token usage.
 type InteractionUsage struct {
 	TotalInputTokens        int                         `json:"totalInputTokens,omitempty"`
 	InputTokensByModality   []*InteractionModalityTokens `json:"inputTokensByModality,omitempty"`
@@ -157,17 +166,10 @@ type InteractionImageConfig struct {
 // CreateInteractionConfig configuration for CreateInteraction.
 type CreateInteractionConfig struct {
 	HTTPOptions *HTTPOptions `json:"httpOptions,omitempty"`
-	Stream      bool         `json:"stream,omitempty"`
-	Background  bool         `json:"background,omitempty"`
-	Store       bool         `json:"store,omitempty"`
 }
 
 // Create initiates a new generation.
 func (i *Interactions) Create(ctx context.Context, interaction *Interaction, config *CreateInteractionConfig) (*Interaction, error) {
-	parameterMap := make(map[string]any)
-	kwargs := map[string]any{"interaction": interaction, "config": config}
-	deepMarshal(kwargs, &parameterMap)
-
 	var httpOptions *HTTPOptions
 	if config == nil || config.HTTPOptions == nil {
 		httpOptions = &HTTPOptions{}
@@ -175,21 +177,8 @@ func (i *Interactions) Create(ctx context.Context, interaction *Interaction, con
 		httpOptions = config.HTTPOptions
 	}
 
-	body := interactionToMap(interaction)
-	if config != nil {
-		if config.Stream {
-			body["stream"] = true
-		}
-		if config.Background {
-			body["background"] = true
-		}
-		if config.Store {
-			body["store"] = true
-		}
-	}
-
 	path := "interactions"
-	responseMap, err := sendRequest(ctx, i.apiClient, path, http.MethodPost, body, httpOptions)
+	responseMap, err := sendRequest(ctx, i.apiClient, path, http.MethodPost, interaction, httpOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -204,42 +193,25 @@ func (i *Interactions) Create(ctx context.Context, interaction *Interaction, con
 }
 
 // CreateStream initiates a new generation and streams results.
-func (i *Interactions) CreateStream(ctx context.Context, interaction *Interaction, config *CreateInteractionConfig) iter.Seq2[*Interaction, error] {
-	if config == nil {
-		config = &CreateInteractionConfig{}
-	}
-	config.Stream = true
-
-	parameterMap := make(map[string]any)
-	kwargs := map[string]any{"interaction": interaction, "config": config}
-	deepMarshal(kwargs, &parameterMap)
-
+func (i *Interactions) CreateStream(ctx context.Context, interaction *Interaction, config *CreateInteractionConfig) iter.Seq2[*InteractionEvent, error] {
 	var httpOptions *HTTPOptions
-	if config.HTTPOptions == nil {
+	if config == nil || config.HTTPOptions == nil {
 		httpOptions = &HTTPOptions{}
 	} else {
 		httpOptions = config.HTTPOptions
 	}
 
-	body := interactionToMap(interaction)
-	body["stream"] = true
-	if config.Background {
-		body["background"] = true
-	}
-	if config.Store {
-		body["store"] = true
-	}
-
+	interaction.Stream = true
 	path := "interactions?alt=sse"
-	var rs responseStream[Interaction]
+	var rs responseStream[InteractionEvent]
 
-	err := sendStreamRequest(ctx, i.apiClient, path, http.MethodPost, body, httpOptions, &rs)
+	err := sendStreamRequest(ctx, i.apiClient, path, http.MethodPost, interaction, httpOptions, &rs)
 	if err != nil {
-		return yieldErrorAndEndIterator[Interaction](err)
+		return yieldErrorAndEndIterator[InteractionEvent](err)
 	}
 
-	return iterateResponseStream(&rs, func(responseMap map[string]any) (*Interaction, error) {
-		var response = new(Interaction)
+	return iterateResponseStream(&rs, func(responseMap map[string]any) (*InteractionEvent, error) {
+		var response = new(InteractionEvent)
 		err = mapToStruct(responseMap, response)
 		if err != nil {
 			return nil, err
@@ -273,7 +245,7 @@ func (i *Interactions) Get(ctx context.Context, id string, config *GetInteractio
 }
 
 // GetStream streams a previously created background interaction or resumes a stream.
-func (i *Interactions) GetStream(ctx context.Context, id string, config *GetInteractionConfig) iter.Seq2[*Interaction, error] {
+func (i *Interactions) GetStream(ctx context.Context, id string, config *GetInteractionConfig) iter.Seq2[*InteractionEvent, error] {
 	var httpOptions *HTTPOptions
 	if config == nil || config.HTTPOptions == nil {
 		httpOptions = &HTTPOptions{}
@@ -286,14 +258,14 @@ func (i *Interactions) GetStream(ctx context.Context, id string, config *GetInte
 		path = fmt.Sprintf("%s&last_event_id=%s", path, config.LastEventID)
 	}
 
-	var rs responseStream[Interaction]
+	var rs responseStream[InteractionEvent]
 	err := sendStreamRequest(ctx, i.apiClient, path, http.MethodGet, nil, httpOptions, &rs)
 	if err != nil {
-		return yieldErrorAndEndIterator[Interaction](err)
+		return yieldErrorAndEndIterator[InteractionEvent](err)
 	}
 
-	return iterateResponseStream(&rs, func(responseMap map[string]any) (*Interaction, error) {
-		var response = new(Interaction)
+	return iterateResponseStream(&rs, func(responseMap map[string]any) (*InteractionEvent, error) {
+		var response = new(InteractionEvent)
 		err = mapToStruct(responseMap, response)
 		if err != nil {
 			return nil, err

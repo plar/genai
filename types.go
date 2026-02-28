@@ -1390,7 +1390,7 @@ type HTTPOptions struct {
 // the modified body. This is useful for advanced scenarios where request
 // parameters need to be added based on logic that cannot
 // be handled by a static map.
-type ExtrasRequestProvider = func(body map[string]any) map[string]any
+type ExtrasRequestProvider = func(body any) any
 
 type UrlRetrievalStatus = URLRetrievalStatus
 
