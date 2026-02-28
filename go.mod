@@ -1,4 +1,4 @@
-module google.golang.org/genai
+module github.com/plar/genai
 
 go 1.24
 

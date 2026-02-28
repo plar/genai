@@ -29,7 +29,7 @@ import (
 	"sync"
 
 	sentencepiece "github.com/eliben/go-sentencepiece"
-	"google.golang.org/genai"
+	"github.com/plar/genai"
 )
 
 // geminiModelsToLocalTokenizerNames maps model names to their tokenizer types

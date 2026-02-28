@@ -8,7 +8,7 @@ import (
 	"os"
 
 	"github.com/googleapis/mcp-toolbox-sdk-go/core"
-	"google.golang.org/genai"
+	"github.com/plar/genai"
 )
 
 // ConvertToGenaiTool translates a ToolboxTool into the genai.FunctionDeclaration format.

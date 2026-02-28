@@ -4,7 +4,7 @@ go 1.24.4
 
 require (
 	github.com/googleapis/mcp-toolbox-sdk-go v0.2.0
-	google.golang.org/genai v1.18.0
+	github.com/plar/genai v1.18.0
 )
 
 require (

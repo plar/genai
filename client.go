@@ -50,6 +50,8 @@ type Client struct {
 	Tunings *Tunings
 	// Tokens provides access to the Tokens service.
 	AuthTokens *Tokens
+	// Interactions provides access to the Interactions service.
+	Interactions *Interactions
 }
 
 // Backend is the GenAI backend to use for the client.
@@ -340,6 +342,7 @@ func NewClient(ctx context.Context, cc *ClientConfig) (*Client, error) {
 		Batches:          &Batches{apiClient: ac},
 		Tunings:          &Tunings{apiClient: ac},
 		AuthTokens:       &Tokens{apiClient: ac},
+		Interactions:     &Interactions{apiClient: ac},
 	}
 	return c, nil
 }

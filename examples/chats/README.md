@@ -20,7 +20,7 @@ Once you setup the environment variables, you can download, build and run the
 example using the following commands.
 
 ```
-$ go get google.golang.org/genai
-$ cd `go list -f '{{.Dir}}' google.golang.org/genai/examples/chats`
+$ go get github.com/plar/genai
+$ cd `go list -f '{{.Dir}}' github.com/plar/genai/examples/chats`
 $ go run chats.go
 ```
